@@ -54,7 +54,12 @@ jobs:
       - name: Test (full, no skips allowed)
         run: |
           set -o pipefail
-          node --test --test-reporter=tap 'test/*.test.js' 2>&1 | tee test-output.txt
+          node --test --test-reporter=tap 'test/*.test.js' 2>&1 | tee test-output.txt || {
+            # Job logs need a GitHub login; annotations do not. One per failure.
+            awk '/^ *not ok /{if(buf)print buf; buf=$0; n=0; next} buf&&n<40{buf=buf"%0A"$0; n++} END{if(buf)print buf}' test-output.txt \
+              | head -c 60000 | while IFS= read -r block; do echo "::error title=test failed::$block"; done
+            exit 1
+          }
           skipped=$(sed -n 's/^# skipped \([0-9]\{1,\}\)$/\1/p' test-output.txt)
           if [ -z "$skipped" ] || [ "$skipped" -ne 0 ]; then
             echo "::error::tests skipped (${skipped:-unknown}); the payload or Chromium is missing."
