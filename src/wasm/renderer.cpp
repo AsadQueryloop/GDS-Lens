@@ -544,6 +544,28 @@ constexpr float kSolidPattern = 4.0f;
 bool g_slot_solid[kSlotCount] = {false, false};
 bool g_cache_slot_solid[kSlotCount] = {false, false};
 
+// The spotlight: polygons the host hands over (setSpotlight) drawn solid in
+// their layers' colours over the layout, while every layer of the layout fades
+// to g_spot_dim. For pointing at part of a design -- one cell in every
+// placement, one net -- without loading anything into a comparison slot, so
+// the Compare folder, the hierarchy and click selection are left alone.
+// Grouped per layer, one fill and one edge buffer each, in world units.
+struct SpotGroup {
+    uint32_t layer = 0;
+    uint32_t datatype = 0;
+    GLuint fill_vbo = 0;
+    GLsizei fill_count = 0;
+    GLuint edge_vbo = 0;
+    GLsizei edge_count = 0;
+    float min_x = HUGE_VALF, max_x = -HUGE_VALF, min_y = HUGE_VALF, max_y = -HUGE_VALF;
+};
+std::vector<SpotGroup> g_spot;
+float g_spot_dim = 0.18f;   // alpha factor on every layout layer while a spotlight is up
+float g_spot_fill = 0.75f;  // alpha of the spotlight's solid fill
+float g_cache_spot_dim = 1.0f;
+// What the layout's layers are multiplied by right now: 1 with no spotlight.
+float spot_dim() { return g_spot.empty() ? 1.0f : g_spot_dim; }
+
 // Optional per-slot hue, off by default. Two revisions of one design are the
 // same colors in the same places, so at a 50/50 blend they look like one
 // layout; nudging each slot toward its own hue is the cheapest way to see
@@ -2604,7 +2626,7 @@ float slot_pattern(const LayerBuffer& layer) {
 
 std::array<float, 4> slot_color(const LayerBuffer& layer, const std::array<float, 4>& base) {
     std::array<float, 4> out = base;
-    out[3] = base[3] * g_slot_alpha[layer.source];
+    out[3] = base[3] * g_slot_alpha[layer.source] * spot_dim();
     if (g_slot_tint) {
         for (int i = 0; i < 3; i++) {
             out[i] = base[i] + (kSlotTint[layer.source][i] - base[i]) * kSlotTintMix;
@@ -2950,6 +2972,57 @@ void draw_highlight_quads(const std::vector<float>& verts) {
     glDrawArrays(GL_TRIANGLES, 0, (GLsizei)(verts.size() / 2));
 }
 
+// The colours a spotlit layer draws in: the loaded layer's own (the first
+// layout's copy first), else what the .lyp or the fallback palette gives that
+// layer/datatype. False for a layer the user has hidden, which hides its
+// spotlight too.
+bool spot_colors(const SpotGroup& g, std::array<float, 4>& fill, std::array<float, 4>& frame) {
+    const LayerBuffer* hit = nullptr;
+    for (const LayerBuffer& l : g_layers) {
+        if (l.layer != g.layer || l.datatype != g.datatype) continue;
+        hit = &l;
+        if (l.source == 0) break;
+    }
+    if (hit) {
+        if (!hit->visible) return false;
+        fill = hit->fill_color;
+        frame = hit->frame_color;
+        return true;
+    }
+    LayerBuffer tmp;
+    tmp.layer = g.layer;
+    tmp.datatype = g.datatype;
+    resolve_layer_colors(tmp);
+    fill = tmp.fill_color;
+    frame = tmp.frame_color;
+    return true;
+}
+
+// Every spotlit layer's solid fill, then every edge on top, so one layer's
+// fill never buries another's outline. Same shader as the overlays around it
+// (u_useHatch=0 is solid); over the faded layout, under text and ports.
+void draw_spotlight() {
+    if (g_spot.empty()) return;
+    const ViewRect view = current_view_rect();
+    glUniform1f(g_loc_use_hatch, 0.0f);
+    for (int pass = 0; pass < 2; pass++) {
+        for (const SpotGroup& g : g_spot) {
+            if (!bbox_intersects_view(g.min_x, g.max_x, g.min_y, g.max_y, view)) continue;
+            std::array<float, 4> fill, frame;
+            if (!spot_colors(g, fill, frame)) continue;
+            const GLuint vbo = pass == 0 ? g.fill_vbo : g.edge_vbo;
+            const GLsizei count = pass == 0 ? g.fill_count : g.edge_count;
+            if (!vbo || count == 0) continue;
+            glBindBuffer(GL_ARRAY_BUFFER, vbo);
+            glEnableVertexAttribArray(g_loc_position);
+            glVertexAttribPointer(g_loc_position, 2, GL_FLOAT, GL_FALSE, 0, 0);
+            if (pass == 0) glUniform4f(g_loc_color, fill[0], fill[1], fill[2], g_spot_fill);
+            else glUniform4f(g_loc_color, frame[0], frame[1], frame[2], 1.0f);
+            glDrawArrays(pass == 0 ? GL_TRIANGLES : GL_LINES, 0, count);
+        }
+    }
+}
+
 // Draws the selected cell's outlines: one dashed rectangle per box in
 // g_highlight_boxes, built as screen-thickness quads. Both properties are there
 // to keep them from reading as part of the layout -- a solid thin rectangle is
@@ -3199,6 +3272,7 @@ void render_layer_cache(uint64_t* polys, int* layers, uint64_t* draws) {
     g_cache_infill = g_show_infill;
     for (int i = 0; i < kSlotCount; i++) g_cache_slot_alpha[i] = g_slot_alpha[i];
     for (int i = 0; i < kSlotCount; i++) g_cache_slot_solid[i] = g_slot_solid[i];
+    g_cache_spot_dim = spot_dim();
     g_cache_stat_polygons = *polys;
     g_cache_stat_layers = *layers;
     g_cache_stat_draws = *draws;
@@ -3279,7 +3353,8 @@ bool draw_frame(double time, void* /*userData*/) {
     if (g_cache_filled &&
         (g_cache_epoch != g_layer_epoch || g_cache_infill != g_show_infill ||
          g_cache_slot_alpha[0] != g_slot_alpha[0] || g_cache_slot_alpha[1] != g_slot_alpha[1] ||
-         g_cache_slot_solid[0] != g_slot_solid[0] || g_cache_slot_solid[1] != g_slot_solid[1])) {
+         g_cache_slot_solid[0] != g_slot_solid[0] || g_cache_slot_solid[1] != g_slot_solid[1] ||
+         g_cache_spot_dim != spot_dim())) {
         g_cache_filled = false;
     }
 
@@ -3346,6 +3421,7 @@ bool draw_frame(double time, void* /*userData*/) {
     // Over the blended geometry and under everything that has to stay
     // readable on top of it.
     draw_diff_highlight();
+    draw_spotlight();
     draw_text();
     draw_ports();
     draw_markers();
@@ -6722,6 +6798,91 @@ void setCellHighlight(val boxes) {
     request_redraw();
 }
 
+void clear_spot_buffers() {
+    for (SpotGroup& g : g_spot) {
+        if (g.fill_vbo) delete_buffer_tracked(&g.fill_vbo);
+        if (g.edge_vbo) delete_buffer_tracked(&g.edge_vbo);
+    }
+    g_spot.clear();
+}
+
+// Puts up the spotlight (see g_spot): `groups` is an array of
+// {layer, datatype, coords, counts} -- coords the polygons' world-space x/y
+// pairs back to back, counts each polygon's point count -- and the rest of the
+// layout fades to `dim` while the polygons fill solid at `fill`. Replaces any
+// spotlight already up. Non-finite or degenerate polygons are skipped one by
+// one; one over the triangulation cap keeps its outline and loses its fill.
+void setSpotlight(val groups, float dim, float fill) {
+    if (!g_gl_ready) return;
+    clear_spot_buffers();
+    auto clamp01 = [](float v) { return std::isfinite(v) ? std::min(1.0f, std::max(0.0f, v)) : 0.0f; };
+    g_spot_dim = clamp01(dim);
+    g_spot_fill = clamp01(fill);
+    const unsigned n = groups["length"].as<unsigned>();
+    std::vector<Vec2> ring;
+    std::vector<uint32_t> tri;
+    for (unsigned i = 0; i < n; i++) {
+        val entry = groups[i];
+        SpotGroup g;
+        g.layer = entry["layer"].as<uint32_t>();
+        g.datatype = entry["datatype"].as<uint32_t>();
+        const std::vector<double> coords = convertJSArrayToNumberVector<double>(entry["coords"]);
+        const std::vector<uint32_t> counts = convertJSArrayToNumberVector<uint32_t>(entry["counts"]);
+        std::vector<float> fill_v, edge_v;
+        size_t at = 0;
+        for (uint32_t c : counts) {
+            if (at + (size_t)c * 2 > coords.size()) break;
+            ring.clear();
+            bool ok = c >= 3;
+            for (uint32_t k = 0; k < c; k++) {
+                const double x = coords[at + k * 2], y = coords[at + k * 2 + 1];
+                if (!std::isfinite(x) || !std::isfinite(y)) ok = false;
+                ring.push_back(Vec2{x, y});
+            }
+            at += (size_t)c * 2;
+            if (!ok) continue;
+            for (uint32_t k = 0; k < c; k++) {
+                const Vec2& a = ring[k];
+                const Vec2& b = ring[(k + 1) % c];
+                edge_v.insert(edge_v.end(), {(float)a.x, (float)a.y, (float)b.x, (float)b.y});
+                g.min_x = std::min(g.min_x, (float)a.x);
+                g.max_x = std::max(g.max_x, (float)a.x);
+                g.min_y = std::min(g.min_y, (float)a.y);
+                g.max_y = std::max(g.max_y, (float)a.y);
+            }
+            Array<Vec2> view = {};
+            view.items = ring.data();
+            view.count = ring.size();
+            view.capacity = ring.size();
+            tri.clear();
+            triangulate(view, tri);
+            for (uint32_t idx : tri) {
+                fill_v.push_back((float)ring[idx].x);
+                fill_v.push_back((float)ring[idx].y);
+            }
+        }
+        if (edge_v.empty()) continue;
+        auto upload = [](GLuint& vbo, GLsizei& count, const std::vector<float>& v) {
+            if (v.empty()) return;
+            glGenBuffers(1, &vbo);
+            glBindBuffer(GL_ARRAY_BUFFER, vbo);
+            buffer_data_tracked(GL_ARRAY_BUFFER, vbo, (GLsizeiptr)(v.size() * sizeof(float)), v.data(),
+                                GL_STATIC_DRAW);
+            count = (GLsizei)(v.size() / 2);
+        };
+        upload(g.fill_vbo, g.fill_count, fill_v);
+        upload(g.edge_vbo, g.edge_count, edge_v);
+        g_spot.push_back(g);
+    }
+    request_redraw();
+}
+
+void clearSpotlight() {
+    if (g_spot.empty()) return;
+    clear_spot_buffers();
+    request_redraw();
+}
+
 void clearCellHighlight() {
     if (g_highlight_boxes.empty()) return;
     g_highlight_boxes.clear();
@@ -7021,6 +7182,8 @@ EMSCRIPTEN_BINDINGS(gdstk_renderer_module) {
     function("flashPoint", &flashPoint);
     function("setCellHighlight", &setCellHighlight);
     function("clearCellHighlight", &clearCellHighlight);
+    function("setSpotlight", &setSpotlight);
+    function("clearSpotlight", &clearSpotlight);
     function("setSelection", &setSelection);
     function("setLabelSelection", &setLabelSelection);
     function("clearSelection", &clearSelection);

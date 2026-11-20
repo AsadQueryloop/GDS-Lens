@@ -319,6 +319,17 @@ export class GdsLens extends ElementBase {
         return (await this.ready).setSlotSolidFill(slot, on);
     }
 
+    // Draws polygons solid in their layers' colours over the layout, and fades
+    // the layout to `dim` meanwhile -- to point at a cell or a net without
+    // loading anything into a comparison slot.
+    async setSpotlight(polygons, options) {
+        return (await this.ready).setSpotlight(polygons, options);
+    }
+
+    async clearSpotlight() {
+        return (await this.ready).clearSpotlight();
+    }
+
     async getBlend() {
         return (await this.ready).getBlend();
     }

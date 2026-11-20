@@ -5147,6 +5147,31 @@ export function createViewer(mountTarget) {
         // hatching them -- for a slot that lights part of the design.
         setSlotSolidFill: (slotId = "b", on = true) =>
             modulePromise.then((Module) => Module.setSlotSolidFill(slotOf(slotId).index, !!on)),
+        // ---- Spotlight ----
+        // Polygons (world units, as getCamera's pan) drawn solid in their
+        // layers' colours over the layout, which fades to `dim` meanwhile.
+        // Nothing is loaded into a slot, so Compare, the hierarchy and
+        // selection are untouched. Cleared by clearSpotlight or a new load
+        // into slot a.
+        setSpotlight: (polygons, { dim = 0.18, fill = 0.75 } = {}) =>
+            modulePromise.then((Module) => {
+                const groups = new Map();
+                for (const polygon of polygons || []) {
+                    const points = polygon && polygon.points;
+                    if (!points || points.length < 3) continue;
+                    const layer = Number(polygon.layer) >>> 0;
+                    const datatype = Number(polygon.datatype ?? 0) >>> 0;
+                    const key = `${layer}/${datatype}`;
+                    let group = groups.get(key);
+                    if (!group) groups.set(key, (group = { layer, datatype, coords: [], counts: [] }));
+                    for (const [x, y] of points) group.coords.push(Number(x), Number(y));
+                    group.counts.push(points.length);
+                }
+                const unit = (v) => Math.min(1, Math.max(0, Number(v) || 0));
+                if (groups.size === 0) Module.clearSpotlight();
+                else Module.setSpotlight([...groups.values()], unit(dim), unit(fill));
+            }),
+        clearSpotlight: () => modulePromise.then((Module) => Module.clearSpotlight()),
         // ---- Selection ----
         // The shape a click selected, the same click made programmatically
         // (world µm; `index` steps down through the shapes under the point),
@@ -5239,6 +5264,8 @@ export function createViewer(mountTarget) {
     // and hands each the slice of layers it is responsible for.
     function startParse(fileData, slot) {
         const bytes = asBytes(fileData);
+        // A spotlight points into the first layout; a new one there makes it stale.
+        if (slot.index === 0) modulePromise.then((Module) => Module.clearSpotlight());
         let shards = null;
         const wanted = shardOverride || shardCount(bytes.byteLength);
         if (wanted > 1) {

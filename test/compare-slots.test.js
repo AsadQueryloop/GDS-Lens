@@ -252,6 +252,49 @@ test("solid fill on the second slot fills its layers instead of hatching them", 
     });
 });
 
+// ---- The spotlight ----
+
+test("a spotlight fills its polygons solid, fades the layout, and clears cleanly", { skip }, async () => {
+    await withViewer(async (page) => {
+        const before = await readFrame(page);
+        const target = await page.evaluate(async () => {
+            const element = document.querySelector("gds-lens");
+            const layer = (await element.getLayers())[0];
+            const camera = await element.getCamera();
+            return { layer: layer.layer, datatype: layer.datatype, x: camera.panX, y: camera.panY };
+        });
+
+        // Far off screen: nothing of it is drawn, so any change is the fade.
+        await page.evaluate((t) => document.querySelector("gds-lens").setSpotlight([{
+            layer: t.layer, datatype: t.datatype,
+            points: [[t.x + 1e6, t.y + 1e6], [t.x + 1e6 + 1, t.y + 1e6], [t.x + 1e6 + 1, t.y + 1e6 + 1]],
+        }]), target);
+        const faded = await readFrame(page);
+        assert.notEqual(faded.sum, before.sum, "the spotlight did not fade the layout");
+
+        // A box well past the view on every side: the frame becomes the fill.
+        await page.evaluate((t) => document.querySelector("gds-lens").setSpotlight([{
+            layer: t.layer, datatype: t.datatype,
+            points: [[t.x - 1e5, t.y - 1e5], [t.x + 1e5, t.y - 1e5], [t.x + 1e5, t.y + 1e5], [t.x - 1e5, t.y + 1e5]],
+        }], { fill: 1 }), target);
+        const lit = await readFrame(page);
+        assert.notEqual(lit.sum, faded.sum, "the spotlight's fill was not drawn");
+        // An opaque fill over the whole view leaves one colour nearly everywhere
+        // (only the labels drawn over it differ).
+        const offFill = await coveredPixels(page);
+        assert.ok(offFill < lit.total * 0.2, `the full-view spotlight is not solid (${offFill} of ${lit.total} differ)`);
+
+        // No slot was used: the comparison stays off.
+        const sources = await page.evaluate(async () =>
+            [...new Set((await document.querySelector("gds-lens").getLayers()).map((l) => l.source))]);
+        assert.deepEqual(sources, [0], "the spotlight loaded geometry into a slot");
+
+        await page.evaluate(() => document.querySelector("gds-lens").clearSpotlight());
+        const after = await readFrame(page);
+        assert.equal(after.sum, before.sum, "clearing the spotlight did not restore the frame");
+    });
+});
+
 test("unloading the second layout returns the viewer to a single one", { skip }, async () => {
     await withViewer(async (page, { port }) => {
         await loadSecond(page, port);

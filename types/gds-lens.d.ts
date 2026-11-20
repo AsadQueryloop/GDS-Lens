@@ -52,6 +52,20 @@ export interface Camera {
  */
 export type Slot = "a" | "b";
 
+/** One polygon for setSpotlight: its layer/datatype and its points in world units (as Camera's pan). */
+export interface SpotlightPolygon {
+    layer: number;
+    datatype?: number;
+    points: ReadonlyArray<readonly [number, number]>;
+}
+
+export interface SpotlightOptions {
+    /** Opacity factor on every layer of the layout while the spotlight is up, 0..1 (default 0.18). */
+    dim?: number;
+    /** Opacity of the spotlight's solid fill, 0..1 (default 0.75). */
+    fill?: number;
+}
+
 /** One row of `getLayers()` -- everything the layer panel shows for a layer. */
 export interface LayerInfo {
     layer: number;
@@ -294,6 +308,14 @@ export interface ViewerSurface {
      * loads into the slot.
      */
     setSlotSolidFill(slot?: Slot, on?: boolean): Promise<void>;
+    /**
+     * Draws `polygons` solid in their layers' colours over the layout and fades
+     * every layer of the layout to `dim` while it is up. Nothing is loaded into
+     * a slot. Replaces any spotlight already up; an empty list clears it, and
+     * so does a new load into slot `"a"`.
+     */
+    setSpotlight(polygons: ReadonlyArray<SpotlightPolygon>, options?: SpotlightOptions): Promise<void>;
+    clearSpotlight(): Promise<void>;
 
     /** Which top cell `slot` (default `"a"`) draws, and the file's own top cells. */
     getTopCells(slot?: Slot): TopCellInfo;
@@ -536,6 +558,8 @@ export declare class GdsLens extends HTMLElement {
     setBlend(value: number): Promise<void>;
     getBlend(): Promise<number>;
     setSlotSolidFill(slot?: Slot, on?: boolean): Promise<void>;
+    setSpotlight(polygons: ReadonlyArray<SpotlightPolygon>, options?: SpotlightOptions): Promise<void>;
+    clearSpotlight(): Promise<void>;
     getTopCells(slot?: Slot): Promise<TopCellInfo>;
     setTopCell(name: string | null, slot?: Slot): Promise<void>;
     getSelection(): Promise<ShapeInfo | null>;

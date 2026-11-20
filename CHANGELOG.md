@@ -9,6 +9,17 @@ version. Before that, `0.x` releases changed it freely.
 
 ## [Unreleased]
 
+## [1.7.2-solid.2] - 2026-11-20 (fork: AsadQueryloop/GDS-Lens)
+
+### Added
+
+- `setSpotlight(polygons, { dim, fill })` and `clearSpotlight()` on the
+  element and the viewer surface: draws the given polygons solid in their
+  layers' colours over the layout, and fades every layer of the layout to
+  `dim` meanwhile. Nothing is loaded into a comparison slot, so Compare, the
+  hierarchy and click selection are left alone. A hidden layer hides its
+  spotlight too; a new load into slot `a` clears it.
+
 ## [1.7.2-solid.1] - 2026-11-20 (fork: AsadQueryloop/GDS-Lens)
 
 ### Added

@@ -49,6 +49,8 @@ await element.load("new.gds", { slot: "b", name: "new.gds" });
 await element.setBlend(0.5);
 const blend: number = await element.getBlend();
 await element.setSlotSolidFill("b", true);
+await element.setSpotlight([{ layer: 1, points: [[0, 0], [1, 0], [1, 1]] }], { dim: 0.2, fill: 0.8 });
+await element.clearSpotlight();
 void blend;
 // getLayers says which of the two each entry came from.
 const sources: Array<0 | 1> = (await element.getLayers()).map((layer) => layer.source);
