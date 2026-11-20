@@ -210,20 +210,45 @@ test("the blend slider reaches the pixels, and its ends are the two layouts", { 
     });
 });
 
+// Pixels that are not the background, taken as the frame's most common colour
+// (readFrame's ink counts any non-dark pixel, which is every pixel on a light
+// theme).
+async function coveredPixels(page) {
+    return page.evaluate(async () => {
+        const element = document.querySelector("gds-lens");
+        await element.setCamera(await element.getCamera());
+        return new Promise((resolve) => {
+            requestAnimationFrame(() => {
+                const canvas = element.shadowRoot.getElementById("glCanvas");
+                const gl = canvas.getContext("webgl2");
+                const px = new Uint8Array(canvas.width * canvas.height * 4);
+                gl.readPixels(0, 0, canvas.width, canvas.height, gl.RGBA, gl.UNSIGNED_BYTE, px);
+                const count = new Map();
+                for (let i = 0; i < px.length; i += 4) {
+                    const key = (px[i] << 16) | (px[i + 1] << 8) | px[i + 2];
+                    count.set(key, (count.get(key) || 0) + 1);
+                }
+                let background = 0;
+                for (const n of count.values()) background = Math.max(background, n);
+                resolve(canvas.width * canvas.height - background);
+            });
+        });
+    });
+}
+
 test("solid fill on the second slot fills its layers instead of hatching them", { skip }, async () => {
     await withViewer(async (page, { port }) => {
         await loadSecond(page, port);
         await page.evaluate(() => document.querySelector("gds-lens").setBlend(1));
-        const hatched = await readFrame(page);
+        const hatched = await coveredPixels(page);
         await page.evaluate(() => document.querySelector("gds-lens").setSlotSolidFill("b", true));
-        const solid = await readFrame(page);
+        const solid = await coveredPixels(page);
 
-        assert.ok(hatched.ink > 0, "nothing was drawn before solid fill");
-        assert.ok(solid.ink > hatched.ink, `solid fill did not cover more pixels (${solid.ink} vs ${hatched.ink})`);
+        assert.ok(hatched > 0, "nothing was drawn before solid fill");
+        assert.ok(solid > hatched * 1.5, `solid fill did not cover more pixels (${solid} vs ${hatched})`);
 
         await page.evaluate(() => document.querySelector("gds-lens").setSlotSolidFill("b", false));
-        const back = await readFrame(page);
-        assert.equal(back.sum, hatched.sum, "turning solid fill off did not restore the hatch");
+        assert.equal(await coveredPixels(page), hatched, "turning solid fill off did not restore the hatch");
     });
 });
 
