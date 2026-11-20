@@ -48,6 +48,8 @@ inline const char* const kVertexShaderSrc =
 // pitch stays a constant pixel cadence regardless of zoom; world-space
 // patterns would turn into solid fill when zoomed in and disappear when
 // zoomed out. Outlines (u_useHatch=0) are unaffected.
+// Pattern type 4 is a solid fill (mask 1): a slot set to solid fill
+// (setSlotSolidFill) draws every layer with it, at the same alpha cap.
 inline const char* const kFragmentShaderSrc =
     "#version 300 es\n"
     "precision highp float;\n"
@@ -85,6 +87,8 @@ inline const char* const kFragmentShaderSrc =
     "            float aa = fwidth(dist) + 0.001;\n"
     "            float dotRadius = u_hatchWidth * 1.7;\n"
     "            mask = 1.0 - smoothstep(dotRadius - aa, dotRadius + aa, dist);\n"
+    "        } else if (patternType == 4) {\n"
+    "            mask = 1.0;\n"
     "        } else {\n"
     "            mask = max(lineMask(p.x, u_hatchSpacing, u_hatchWidth), lineMask(p.y, u_hatchSpacing, u_hatchWidth));\n"
     "        }\n"
@@ -244,6 +248,8 @@ inline const char* const kCompositeFragmentShaderSrc =
     "            float aa = 1.0 + 0.001;\n"  // fwidth(dist) <= sqrt(2); 1.0 is close enough
     "            float dotRadius = u_hatchWidth * 1.7;\n"
     "            mask = 1.0 - smoothstep(dotRadius - aa, dotRadius + aa, dist);\n"
+    "        } else if (patternType == 4) {\n"
+    "            mask = 1.0;\n"
     "        } else {\n"
     "            mask = max(lineMask(p.x, u_hatchSpacing, u_hatchWidth, 1.0), lineMask(p.y, u_hatchSpacing, u_hatchWidth, 1.0));\n"
     "        }\n"

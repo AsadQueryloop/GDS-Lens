@@ -48,6 +48,7 @@ surface.element.addEventListener("drop", () => {});
 await element.load("new.gds", { slot: "b", name: "new.gds" });
 await element.setBlend(0.5);
 const blend: number = await element.getBlend();
+await element.setSlotSolidFill("b", true);
 void blend;
 // getLayers says which of the two each entry came from.
 const sources: Array<0 | 1> = (await element.getLayers()).map((layer) => layer.source);

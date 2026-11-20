@@ -5143,6 +5143,10 @@ export function createViewer(mountTarget) {
         // between crossfades them. The Compare folder's slider is this.
         setBlend: setCompareBlend,
         getBlend: () => compareState.blend,
+        // Fills one slot's layers solid in their layer colours instead of
+        // hatching them -- for a slot that lights part of the design.
+        setSlotSolidFill: (slotId = "b", on = true) =>
+            modulePromise.then((Module) => Module.setSlotSolidFill(slotOf(slotId).index, !!on)),
         // ---- Selection ----
         // The shape a click selected, the same click made programmatically
         // (world µm; `index` steps down through the shapes under the point),

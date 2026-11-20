@@ -210,6 +210,23 @@ test("the blend slider reaches the pixels, and its ends are the two layouts", { 
     });
 });
 
+test("solid fill on the second slot fills its layers instead of hatching them", { skip }, async () => {
+    await withViewer(async (page, { port }) => {
+        await loadSecond(page, port);
+        await page.evaluate(() => document.querySelector("gds-lens").setBlend(1));
+        const hatched = await readFrame(page);
+        await page.evaluate(() => document.querySelector("gds-lens").setSlotSolidFill("b", true));
+        const solid = await readFrame(page);
+
+        assert.ok(hatched.ink > 0, "nothing was drawn before solid fill");
+        assert.ok(solid.ink > hatched.ink, `solid fill did not cover more pixels (${solid.ink} vs ${hatched.ink})`);
+
+        await page.evaluate(() => document.querySelector("gds-lens").setSlotSolidFill("b", false));
+        const back = await readFrame(page);
+        assert.equal(back.sum, hatched.sum, "turning solid fill off did not restore the hatch");
+    });
+});
+
 test("unloading the second layout returns the viewer to a single one", { skip }, async () => {
     await withViewer(async (page, { port }) => {
         await loadSecond(page, port);

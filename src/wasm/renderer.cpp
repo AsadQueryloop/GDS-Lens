@@ -535,6 +535,14 @@ float g_slot_alpha[kSlotCount] = {1.0f, 1.0f};
 // with the slots.
 float g_cache_slot_alpha[kSlotCount] = {1.0f, 1.0f};
 
+// Per-slot solid fill, off by default. A slot set to it fills every layer
+// with the layer colour (pattern type 4 in the fill shaders) rather than the
+// layer's hatch, so a slot used to light part of a design -- a cell, a net --
+// reads as a solid shape in its layer colours over the hatched design.
+constexpr float kSolidPattern = 4.0f;
+bool g_slot_solid[kSlotCount] = {false, false};
+bool g_cache_slot_solid[kSlotCount] = {false, false};
+
 // Optional per-slot hue, off by default. Two revisions of one design are the
 // same colors in the same places, so at a 50/50 blend they look like one
 // layout; nudging each slot toward its own hue is the cheapest way to see
@@ -2588,6 +2596,11 @@ void draw_grid() {
 // mode's composite pass. Scaling the alpha component here reaches all six
 // call sites with no new uniform, no new shader variant, and no chance of one
 // path silently missing the fade.
+// The fill pattern a layer draws with: its own, or solid if its slot is set to it.
+float slot_pattern(const LayerBuffer& layer) {
+    return g_slot_solid[layer.source] ? kSolidPattern : layer.pattern_type;
+}
+
 std::array<float, 4> slot_color(const LayerBuffer& layer, const std::array<float, 4>& base) {
     std::array<float, 4> out = base;
     out[3] = base[3] * g_slot_alpha[layer.source];
@@ -2677,7 +2690,7 @@ void draw_layer_merged(const LayerBuffer& layer) {
     const std::array<float, 4> comp_frame = slot_color(layer, layer.frame_color);
     glUniform4fv(g_comp_loc_fill_color, 1, comp_fill.data());
     glUniform4fv(g_comp_loc_frame_color, 1, comp_frame.data());
-    glUniform1f(g_comp_loc_pattern_type, layer.pattern_type);
+    glUniform1f(g_comp_loc_pattern_type, slot_pattern(layer));
     glUniform1f(g_comp_loc_hatch_angle, layer.hatch_angle);
     glUniform1f(g_comp_loc_hatch_spacing, kHatchSpacingPx);
     glUniform1f(g_comp_loc_hatch_width, kHatchHalfWidthPx);
@@ -3115,7 +3128,7 @@ void draw_layers(const ViewRect& view, uint64_t* out_polygons, int* out_layers_d
         if (g_show_infill) {
             glUniform4fv(g_loc_color, 1, fill_color.data());
             glUniform1f(g_loc_use_hatch, 1.0f);
-            glUniform1f(g_loc_pattern_type, layer.pattern_type);
+            glUniform1f(g_loc_pattern_type, slot_pattern(layer));
             glUniform1f(g_loc_hatch_angle, layer.hatch_angle);
             glUniform1f(g_loc_hatch_spacing, kHatchSpacingPx);
             glUniform1f(g_loc_hatch_width, kHatchHalfWidthPx);
@@ -3183,6 +3196,7 @@ void render_layer_cache(uint64_t* polys, int* layers, uint64_t* draws) {
     g_cache_epoch = g_layer_epoch;
     g_cache_infill = g_show_infill;
     for (int i = 0; i < kSlotCount; i++) g_cache_slot_alpha[i] = g_slot_alpha[i];
+    for (int i = 0; i < kSlotCount; i++) g_cache_slot_solid[i] = g_slot_solid[i];
     g_cache_stat_polygons = *polys;
     g_cache_stat_layers = *layers;
     g_cache_stat_draws = *draws;
@@ -3262,7 +3276,8 @@ bool draw_frame(double time, void* /*userData*/) {
     // leave a stale image on screen by forgetting to invalidate.
     if (g_cache_filled &&
         (g_cache_epoch != g_layer_epoch || g_cache_infill != g_show_infill ||
-         g_cache_slot_alpha[0] != g_slot_alpha[0] || g_cache_slot_alpha[1] != g_slot_alpha[1])) {
+         g_cache_slot_alpha[0] != g_slot_alpha[0] || g_cache_slot_alpha[1] != g_slot_alpha[1] ||
+         g_cache_slot_solid[0] != g_slot_solid[0] || g_cache_slot_solid[1] != g_slot_solid[1])) {
         g_cache_filled = false;
     }
 
@@ -6406,6 +6421,14 @@ void setSlotTint(bool on) {
     request_redraw();
 }
 
+// Solid fill for one slot's layers instead of their hatch. Stays set across
+// loads into the slot; the other slot is unaffected.
+void setSlotSolidFill(int slot, bool on) {
+    if (slot < 0 || slot >= kSlotCount) return;
+    g_slot_solid[slot] = on;
+    request_redraw();
+}
+
 // Unloads one slot's geometry, leaving the other's alone. The viewer calls
 // this when a comparison drops back to a single layout.
 void clearSlot(int slot) {
@@ -6975,6 +6998,7 @@ EMSCRIPTEN_BINDINGS(gdstk_renderer_module) {
     function("setMergeMode", &setMergeMode);
     function("setSlotAlpha", &setSlotAlpha);
     function("setSlotTint", &setSlotTint);
+    function("setSlotSolidFill", &setSlotSolidFill);
     function("clearSlot", &clearSlot);
     function("setDiffHighlight", &setDiffHighlight);
     function("setShowGrid", &setShowGrid);

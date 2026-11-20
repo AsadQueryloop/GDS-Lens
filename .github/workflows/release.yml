@@ -1,0 +1,74 @@
+# Builds, tests and packs the fork's tarball, and attaches it to a GitHub
+# Release, so a project can install it straight from the release URL:
+#
+#   "gds-lens": "https://github.com/<owner>/GDS-Lens/releases/download/<tag>/gds-lens-<version>.tgz"
+#
+# Runs on tags like v1.7.2-solid.1 only (publish.yml, the npm one, is disabled
+# in this fork). The tag must match package.json's version.
+
+name: Release
+
+on:
+  push:
+    tags: ["v*-solid.*"]
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    name: build + test + GitHub release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: 6.0.1
+          actions-cache-folder: emsdk-cache
+
+      - name: Tag matches package.json
+        run: |
+          want="v$(node -p "require('./package.json').version")"
+          if [ "$want" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match package.json version $want"
+            exit 1
+          fi
+
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run build:wasm
+      - run: npm run build
+      - run: npm run check:dist
+      - run: npm run check:package
+
+      - name: Test (full, no skips allowed)
+        run: |
+          set -o pipefail
+          node --test --test-reporter=tap 'test/*.test.js' 2>&1 | tee test-output.txt
+          skipped=$(sed -n 's/^# skipped \([0-9]\{1,\}\)$/\1/p' test-output.txt)
+          if [ -z "$skipped" ] || [ "$skipped" -ne 0 ]; then
+            echo "::error::tests skipped (${skipped:-unknown}); the payload or Chromium is missing."
+            exit 1
+          fi
+
+      - name: Pack
+        id: pack
+        run: echo "file=$(npm pack --silent | tail -1)" >> "$GITHUB_OUTPUT"
+
+      - name: GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" "${{ steps.pack.outputs.file }}" \
+            --title "$GITHUB_REF_NAME" --prerelease \
+            --notes "Fork build of gds-lens with per-slot solid fill (setSlotSolidFill). See CHANGELOG.md."

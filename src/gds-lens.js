@@ -313,6 +313,12 @@ export class GdsLens extends ElementBase {
         return (await this.ready).setBlend(value);
     }
 
+    // Fills one slot's layers solid, in their layer colours, instead of
+    // hatching them. Stays set across loads into the slot.
+    async setSlotSolidFill(slot = "b", on = true) {
+        return (await this.ready).setSlotSolidFill(slot, on);
+    }
+
     async getBlend() {
         return (await this.ready).getBlend();
     }

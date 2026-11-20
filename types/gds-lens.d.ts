@@ -288,6 +288,11 @@ export interface ViewerSurface {
      */
     setBlend(value: number): Promise<void>;
     getBlend(): number;
+    /**
+     * Fills `slot`'s layers (default `"b"`) solid in their layer colours
+     * instead of their hatch. Stays set across loads into the slot.
+     */
+    setSlotSolidFill(slot?: Slot, on?: boolean): Promise<void>;
 
     /** Which top cell `slot` (default `"a"`) draws, and the file's own top cells. */
     getTopCells(slot?: Slot): TopCellInfo;
@@ -529,6 +534,7 @@ export declare class GdsLens extends HTMLElement {
     unload(slot?: Slot): Promise<void>;
     setBlend(value: number): Promise<void>;
     getBlend(): Promise<number>;
+    setSlotSolidFill(slot?: Slot, on?: boolean): Promise<void>;
     getTopCells(slot?: Slot): Promise<TopCellInfo>;
     setTopCell(name: string | null, slot?: Slot): Promise<void>;
     getSelection(): Promise<ShapeInfo | null>;
