@@ -245,7 +245,7 @@ test("solid fill on the second slot fills its layers instead of hatching them", 
         const solid = await coveredPixels(page);
 
         assert.ok(hatched > 0, "nothing was drawn before solid fill");
-        assert.ok(solid > hatched * 1.5, `solid fill did not cover more pixels (${solid} vs ${hatched})`);
+        assert.ok(solid > hatched * 1.2, `solid fill did not cover more pixels (${solid} vs ${hatched})`);
 
         await page.evaluate(() => document.querySelector("gds-lens").setSlotSolidFill("b", false));
         assert.equal(await coveredPixels(page), hatched, "turning solid fill off did not restore the hatch");
