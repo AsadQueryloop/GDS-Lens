@@ -15,8 +15,8 @@ version. Before that, `0.x` releases changed it freely.
 
 - `setSlotSolidFill(slot, on)` on the element and the viewer surface: fills
   one slot's layers solid in their layer colours instead of their hatch, in
-  the normal and the merge-overlaps paths. Off by default; stays set across
-  loads into the slot.
+  the normal and the merge-overlaps paths, whether or not Infill is on. Off
+  by default; stays set across loads into the slot.
 
 ## [1.7.2] - 2026-11-04
 

@@ -290,7 +290,8 @@ export interface ViewerSurface {
     getBlend(): number;
     /**
      * Fills `slot`'s layers (default `"b"`) solid in their layer colours
-     * instead of their hatch. Stays set across loads into the slot.
+     * instead of their hatch, whether or not Infill is on. Stays set across
+     * loads into the slot.
      */
     setSlotSolidFill(slot?: Slot, on?: boolean): Promise<void>;
 

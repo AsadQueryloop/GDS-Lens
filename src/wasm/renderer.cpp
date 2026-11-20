@@ -538,7 +538,8 @@ float g_cache_slot_alpha[kSlotCount] = {1.0f, 1.0f};
 // Per-slot solid fill, off by default. A slot set to it fills every layer
 // with the layer colour (pattern type 4 in the fill shaders) rather than the
 // layer's hatch, so a slot used to light part of a design -- a cell, a net --
-// reads as a solid shape in its layer colours over the hatched design.
+// reads as a solid shape in its layer colours over the hatched design. A solid
+// slot fills whether or not Infill is on.
 constexpr float kSolidPattern = 4.0f;
 bool g_slot_solid[kSlotCount] = {false, false};
 bool g_cache_slot_solid[kSlotCount] = {false, false};
@@ -2694,7 +2695,7 @@ void draw_layer_merged(const LayerBuffer& layer) {
     glUniform1f(g_comp_loc_hatch_angle, layer.hatch_angle);
     glUniform1f(g_comp_loc_hatch_spacing, kHatchSpacingPx);
     glUniform1f(g_comp_loc_hatch_width, kHatchHalfWidthPx);
-    glUniform1f(g_comp_loc_show_fill, g_show_infill ? 1.0f : 0.0f);
+    glUniform1f(g_comp_loc_show_fill, (g_show_infill || g_slot_solid[layer.source]) ? 1.0f : 0.0f);
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, g_mask_tex);
     // The fullscreen triangle comes from gl_VertexID; a_position must not be
@@ -3125,7 +3126,8 @@ void draw_layers(const ViewRect& view, uint64_t* out_polygons, int* out_layers_d
         // per-instance 2x3 affine (see a_iCol0/a_iCol1/a_iTranslate in
         // kVertexShaderSrc). Pointing the attributes at that affine buffer is
         // part of the batch's VAO, so binding it is the whole setup.
-        if (g_show_infill) {
+        // A solid slot fills even with Infill off: it is lighting something.
+        if (g_show_infill || g_slot_solid[layer.source]) {
             glUniform4fv(g_loc_color, 1, fill_color.data());
             glUniform1f(g_loc_use_hatch, 1.0f);
             glUniform1f(g_loc_pattern_type, slot_pattern(layer));
